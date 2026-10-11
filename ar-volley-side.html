@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ARバレーボール 横向き</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+/* Layout: side-on court filling the screen, 1P on the left and 2P on the right, net at the centre line. Single dark look by choice. */
+:root {
+  --ink: #0b1114;
+  --hud: #e9f5f3;
+  --hud-dim: #9db4b0;
+  --line: #a8f3e8;
+  --ball: #ffb02e;
+  --p1: #ff6b4a;
+  --p2: #6aa8ff;
+  --glass: rgba(11, 17, 20, 0.62);
+  --font-display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--ink); color: var(--hud); font-family: var(--font-body); overflow: hidden; }
+#stage { position: relative; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
+#c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.hud-top {
+  position: absolute; left: 0; right: 0; top: 0;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 0;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: start; gap: 8px; pointer-events: none;
+}
+.chip {
+  justify-self: start; font-size: 12px; letter-spacing: .08em; padding: 6px 10px;
+  background: var(--glass); border: 1px solid rgba(168,243,232,.35); border-radius: 999px; color: var(--line); white-space: nowrap;
+}
+.chip i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--line); margin-right: 6px; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+.score {
+  display: flex; align-items: center; gap: 12px; padding: 4px 16px;
+  background: var(--glass); border-radius: 10px; font-family: var(--font-display); font-weight: 900;
+  font-size: 34px; line-height: 1.1; font-variant-numeric: tabular-nums;
+}
+.score small { font: 700 11px/1 var(--font-body); letter-spacing: .08em; color: var(--hud-dim); display: block; }
+.score .l b { color: var(--p1); } .score .r b { color: var(--p2); }
+.score .col { display: grid; justify-items: center; min-width: 2.2em; }
+.score .dash { color: var(--hud-dim); font-size: 22px; }
+.rally { justify-self: end; text-align: right; font-size: 12px; color: var(--hud-dim); letter-spacing: .06em; background: var(--glass); padding: 6px 10px; border-radius: 10px; font-variant-numeric: tabular-nums; }
+.rally b { display: block; font-family: var(--font-display); font-size: 22px; color: var(--hud); line-height: 1; }
+
+#toast {
+  position: absolute; left: 50%; top: 24%; transform: translate(-50%, 0); text-align: center; pointer-events: none;
+  opacity: 0; transition: opacity .25s; font-family: var(--font-display); font-weight: 900;
+  font-size: clamp(34px, 9vw, 64px); letter-spacing: .02em; text-shadow: 0 2px 18px rgba(0,0,0,.7);
+  width: max-content; max-width: calc(100% - 32px);
+}
+#toast.show { opacity: 1; }
+#toast small { display: block; font: 700 14px/1.5 var(--font-body); letter-spacing: .04em; color: var(--hud-dim); }
+
+.hud-bottom {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 0 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; pointer-events: none;
+}
+.tools { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; pointer-events: auto; min-width: 0; flex: 1; }
+.ghost {
+  font: 700 12px/1 var(--font-body); color: var(--hud); background: var(--glass);
+  border: 1px solid rgba(168,243,232,.3); border-radius: 10px; padding: 10px 12px; cursor: pointer;
+}
+.ghost:hover { border-color: var(--line); }
+.ghost:focus-visible, .hit:focus-visible, .go:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; }
+.hit {
+  pointer-events: auto; flex: none; width: 84px; height: 84px; border-radius: 50%; border: 2px solid rgba(255,255,255,.55);
+  color: #1a0d05; font: 900 18px/1.1 var(--font-display); letter-spacing: .04em; cursor: pointer; touch-action: manipulation;
+}
+.hit small { display: block; font: 700 10px/1 var(--font-body); letter-spacing: .06em; opacity: .75; }
+#hit1 { background: radial-gradient(circle at 35% 30%, #ffc2b3, var(--p1) 60%, #c8401f); box-shadow: 0 6px 24px rgba(255,107,74,.35); }
+#hit2 { background: radial-gradient(circle at 35% 30%, #cde0ff, var(--p2) 60%, #3b6fc4); box-shadow: 0 6px 24px rgba(106,168,255,.35); }
+.hit:active { transform: scale(.94); }
+.hit[hidden] { display: none !important; }
+
+#intro { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(8,13,15,.76); backdrop-filter: blur(6px); overflow: auto; }
+#intro[hidden] { display: none !important; }
+.card { max-width: 460px; width: 100%; display: grid; gap: 14px; }
+.card h1 { font: 900 clamp(40px, 11vw, 64px)/.95 var(--font-display); margin: 0; letter-spacing: .01em; }
+.card h1 span { color: var(--line); }
+.card p { margin: 0; font-size: 14px; line-height: 1.75; }
+.card ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; font-size: 13px; line-height: 1.6; }
+.card li { display: grid; grid-template-columns: 4.6em 1fr; gap: 10px; }
+.card li b { color: var(--line); font-weight: 700; }
+.note { font-size: 12px; color: var(--hud-dim); line-height: 1.7; border-top: 1px solid rgba(255,255,255,.12); padding-top: 12px; }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; }
+.go { border: 0; border-radius: 12px; background: var(--line); color: #06201c; font: 900 20px/1 var(--font-display); letter-spacing: .08em; padding: 14px 24px; cursor: pointer; }
+.go.alt { background: transparent; color: var(--hud); border: 1px solid rgba(168,243,232,.45); }
+@media (prefers-reduced-motion: reduce) { .chip i { animation: none; } #toast { transition: none; } }
+</style>
+</head><body>
+<div id="stage">
+  <canvas id="c"></canvas>
+  <video id="cam" playsinline muted autoplay style="position:absolute;width:2px;height:2px;opacity:0;pointer-events:none"></video>
+
+  <div class="hud-top">
+    <div class="chip"><i></i><span id="chipTxt">平面ロック</span></div>
+    <div class="score" aria-live="polite">
+      <div class="col l"><small id="nm0">1P</small><b id="sL">0</b></div>
+      <span class="dash">—</span>
+      <div class="col r"><small id="nm1">2P</small><b id="sR">0</b></div>
+    </div>
+    <div class="rally">ラリー<b id="rally">0</b><span id="best">最高 0</span></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <div class="hud-bottom">
+    <button class="hit" id="hit1" type="button" aria-label="1Pヒット">ヒット<small>1P</small></button>
+    <div class="tools">
+      <label class="ghost" for="sens" style="display:flex;gap:8px;align-items:center">移動感度 <input id="sens" type="range" min="0.8" max="3" step="0.1" value="1.6" style="width:90px"></label>
+      <button class="ghost" id="assistBtn" type="button">移動アシスト ON</button>
+      <button class="ghost" id="camBtn" data-cam type="button">カメラ＋ポーズ操作 ON</button>
+      <button class="ghost" id="recal" data-cam type="button" hidden>立ち位置をリセット</button>
+      <label class="ghost" id="photoBtn" for="photo" tabindex="0">部屋の写真を背景に</label>
+      <input id="photo" type="file" accept="image/*" hidden>
+      <button class="ghost" id="resetBg" type="button" hidden>背景を戻す</button>
+    </div>
+    <button class="hit" id="hit2" type="button" aria-label="2Pヒット">ヒット<small>2P</small></button>
+  </div>
+
+  <div id="intro">
+    <div class="card">
+      <h1 id="introTitle">AR<span>バレー</span><br>横向き</h1>
+      <p id="introLead">コートを真横から見て、左の1Pと右の2Pがネット越しに打ち合います。7点先取です。スマホは横持ちがおすすめです。</p>
+      <ul id="introHow">
+        <li><b>1P</b><span>A / D で左右に移動、W / S で狙いの奥行き、F または Space でヒット</span></li>
+        <li><b>2P</b><span>← / → で左右に移動、↑ / ↓ で狙いの奥行き、Enter でヒット</span></li>
+        <li><b>タッチ</b><span>画面の左半分が1P、右半分が2P。横ドラッグで移動、縦ドラッグで狙い、タップかボタンでヒット</span></li>
+        <li data-cam><b>カメラ</b><span>2人でカメラの前に立つと、左側の人が1P、右側の人が2P。その場で体を左右に少し動かすだけで移動（感度で調整）、腕を振り上げるとヒット</span></li>
+        <li><b>アシスト</b><span>ONの間は、操作していないときに落下地点へ自動で寄ります（下のボタンで切替）</span></li>
+        <li><b>サーブ</b><span>1回目でトス、落ちてくるところでもう1回</span></li>
+        <li><b>ヒット</b><span>ボールが足元の輪に入ったら。高いボールはスパイク</span></li>
+      </ul>
+      <div class="btns">
+        <button class="go" id="start2" type="button">ふたりで対戦</button>
+        <button class="go alt" id="start1" type="button">CPUと対戦</button>
+      </div>
+      <p class="note" id="introNote" data-cam>カメラ映像はこの端末の中だけで処理され、送信も保存もされません。2人で遊ぶときは、ぶつからないよう間隔をあけて立ってください。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const cv = $('c'), ctx = cv.getContext('2d');
+  const stage = $('stage');
+  let W = 600, H = 340, DPR = 1, F = 480, CY = 240;
+
+  // ---------- camera: looking along -x, so the court length (z) runs across the screen ----------
+  const C = { x: 15, y: 3.2, z: 0 }, PITCH = 0.2;
+  const sinP = Math.sin(PITCH), cosP = Math.cos(PITCH);
+  function P(x, y, z) {
+    const dx = x - C.x, dy = y - C.y, dz = z - C.z;
+    const zc = -dx * cosP - dy * sinP;
+    if (zc < 0.3) return null;
+    const xc = -dz, yc = -dx * sinP + dy * cosP;
+    return { x: W / 2 + F * xc / zc, y: CY - F * yc / zc, s: F / zc };
+  }
+  function ground(sx, sy) {
+    const a = (sx - W / 2) / F, b = -(sy - CY) / F;
+    const dx = -sinP * b - cosP, dy = cosP * b - sinP, dz = -a;
+    if (dy > -0.001) return null;
+    const t = -C.y / dy;
+    return { x: C.x + dx * t, z: dz * t };
+  }
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = r.width; H = r.height;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    F = Math.min(W * 0.8, H * 1.15);
+    CY = H * 0.7;
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- state ----------
+  const g = 7.6, NET_H = 2.43, TARGET = 7, COL = ['#ff6b4a', '#6aa8ff'];
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const G = { state: 'menu', assist: true, sens: 1.6, cpuMode: false, server: 0, score: [0, 0], rally: 0, best: 0, timer: 0, serveT: 0, winner: 0 };
+  try { G.best = +localStorage.getItem('arvb-side-best') || 0; } catch (e) {}
+  const ball = { x: 0, y: 1.1, z: 5, vx: 0, vy: 0, vz: 0, held: true, lastHit: null, spin: 0, trail: [] };
+  const mk = (i, side) => ({ i, side, z: side * 5, tz: side * 5, x: 0, aim: 0, swing: 0, cool: 0, done: true, name: i ? '2P' : '1P', cpu: false, rolled: false, reactT: 0, lastIn: -9 });
+  const pl = [mk(0, 1), mk(1, -1)];
+  const keys = {};
+  let bg = null, tNow = 0;
+  const clampZ = (p, v) => (p.side > 0 ? clamp(v, 1.2, 8.8) : clamp(v, -8.8, -1.2));
+
+  // ---------- sound ----------
+  let ac = null;
+  function beep(f, d, type, vol) {
+    if (!ac) return;
+    try {
+      const o = ac.createOscillator(), gn = ac.createGain();
+      o.type = type || 'sine'; o.frequency.value = f;
+      gn.gain.setValueAtTime(vol || 0.08, ac.currentTime);
+      gn.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + d);
+      o.connect(gn); gn.connect(ac.destination); o.start(); o.stop(ac.currentTime + d);
+    } catch (e) {}
+  }
+  function unlockAudio() {
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (ac && ac.state === 'suspended') ac.resume();
+  }
+
+  // ---------- HUD ----------
+  let toastTimer = 0;
+  function toast(text, sub, ms) {
+    const t = $('toast');
+    t.innerHTML = '';
+    t.append(document.createTextNode(text));
+    if (sub) { const s = document.createElement('small'); s.textContent = sub; t.append(s); }
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), ms || 1300);
+  }
+  function hud() {
+    $('sL').textContent = G.score[0]; $('sR').textContent = G.score[1];
+    $('nm0').textContent = pl[0].name; $('nm1').textContent = pl[1].name;
+    $('rally').textContent = G.rally; $('best').textContent = '最高 ' + G.best;
+  }
+
+  // ---------- game flow ----------
+  function startMatch(cpuMode) {
+    unlockAudio();
+    G.cpuMode = cpuMode;
+    pl[1].cpu = cpuMode; pl[1].name = cpuMode ? 'CPU' : '2P';
+    $('hit2').hidden = cpuMode;
+    G.score = [0, 0]; G.server = 0;
+    $('intro').hidden = true;
+    startServe();
+  }
+  function startServe() {
+    G.state = 'ready'; G.timer = 0.9; G.rally = 0;
+    ball.held = true; ball.vx = ball.vy = ball.vz = 0; ball.lastHit = null; ball.trail.length = 0;
+    pl.forEach((p) => { p.rolled = false; p.swing = 0; p.done = true; });
+    const s = pl[G.server], o = pl[1 - G.server];
+    s.tz = s.side * 8; o.tz = o.side * 5;
+    if (!s.cpu) s.z = s.tz;
+    if (!o.cpu) o.z = o.tz;
+    hud();
+  }
+  function beginServe() {
+    G.state = 'serve';
+    const s = pl[G.server];
+    if (s.cpu) { G.serveT = 1.1; toast('CPUのサーブ', '', 1000); }
+    else toast(s.name + 'のサーブ', 'ヒットでトス → 落ちてくるところでもう一度', 1900);
+  }
+  function endPoint(w, msg) {
+    if (G.state === 'point' || G.state === 'over') return;
+    G.state = 'point'; G.timer = 1.7; G.winner = w;
+    G.score[w]++;
+    if (G.rally > G.best) {
+      G.best = G.rally;
+      try { localStorage.setItem('arvb-side-best', String(G.best)); } catch (e) {}
+    }
+    toast(pl[w].name + 'のポイント！', msg, 1500);
+    beep(520, 0.25, 'triangle', 0.1);
+    hud();
+  }
+  function finishMatch() {
+    G.state = 'over';
+    $('introTitle').textContent = pl[G.winner].name + 'の勝利！';
+    $('introLead').textContent = `${G.score[0]} - ${G.score[1]}。最高ラリーは ${G.best} 回です。`;
+    $('introHow').hidden = true;
+    $('start2').textContent = 'ふたりでもう一度';
+    $('start1').textContent = 'CPUともう一度';
+    $('intro').hidden = false;
+  }
+
+  // launch the ball so it lands at (tx,tz); raise the arc until it clears the net
+  function launch(tx, tz, T) {
+    const x0 = ball.x, y0 = ball.y, z0 = ball.z;
+    let vx, vy, vz;
+    for (let k = 0; k < 30; k++) {
+      vx = (tx - x0) / T; vz = (tz - z0) / T; vy = (0.5 * g * T * T + 0.16 - y0) / T;
+      if (z0 * tz < 0 && Math.abs(vz) > 0.01) {
+        const tc = -z0 / vz, yc = y0 + vy * tc - 0.5 * g * tc * tc;
+        if (yc > NET_H + 0.35) break;
+      } else break;
+      T += 0.1;
+    }
+    ball.vx = vx; ball.vy = vy; ball.vz = vz; ball.held = false;
+  }
+
+  function eligible(p) {
+    if (ball.held || !['serve', 'rally'].includes(G.state)) return false;
+    if (ball.lastHit === null) { if (p.i !== G.server) return false; }
+    else if (ball.lastHit === p.i) return false;
+    return ball.z * p.side > -0.2;
+  }
+  function reach(p) {
+    if (!eligible(p)) return null;
+    const d = Math.hypot((ball.x - p.x) * 0.6, ball.y - 1.5, ball.z - p.z);
+    return d < 2.2 && ball.y > 0.25 ? d : null;
+  }
+
+  function hitHuman(p, d) {
+    const q = 1 - d / 2.2, spike = ball.y > 2.1, err = (1 - q) * 1.8, o = -p.side;
+    let tx, tz, T;
+    if (G.state === 'serve') { tx = p.aim * 3.2 + rnd(-0.8, 0.8); tz = o * rnd(4.5, 7.5); T = 2.1; }
+    else {
+      tx = clamp(p.aim * 3.4 + rnd(-err, err), -4, 4);
+      if (spike) { tz = o * rnd(2.8, 6.5) + rnd(-err, err); T = 1.1; }
+      else { tz = o * rnd(5, 7.8) + rnd(-err, err); T = 2.1; }
+    }
+    launch(tx, tz, T);
+    afterHit(p);
+    beep(spike ? 520 : 380, 0.12, 'square', 0.07);
+    if (spike) toast('スパイク！', '', 600);
+  }
+  function hitCpu(p, serve) {
+    const o = -p.side, foe = pl[1 - p.i];
+    let tx, tz, T;
+    if (serve) { tx = rnd(-3, 3); tz = o * rnd(3, 7); T = 2.1; }
+    else {
+      tx = clamp(rnd(-3.8, 3.8) + (Math.random() < 0.1 ? rnd(-1.6, 1.6) : 0), -4.6, 4.6);
+      let best = o * rnd(1.5, 8.2);
+      for (let k = 0; k < 2; k++) { const c = o * rnd(1.5, 8.2); if (Math.abs(c - foe.z) > Math.abs(best - foe.z)) best = c; }
+      tz = best; T = rnd(1.6, 2.3);
+    }
+    launch(tx, tz, T);
+    afterHit(p);
+    p.swing = 0.3;
+    beep(300, 0.1, 'square', 0.06);
+  }
+  function afterHit(p) {
+    ball.lastHit = p.i; pl[1 - p.i].rolled = false; pl[1 - p.i].reactT = 0.4; G.state = 'rally'; G.rally++; p.done = true; hud();
+  }
+
+  function doSwing(p) {
+    if (!p || p.cpu || G.state === 'menu' || G.state === 'over') return;
+    if (G.state === 'serve' && G.server === p.i && ball.held) {
+      ball.held = false; ball.vx = 0; ball.vz = 0; ball.vy = 5.2; p.swing = 0.25; p.cool = 0.3;
+      beep(700, 0.06, 'sine', 0.05);
+      return;
+    }
+    if (p.cool > 0) return;
+    p.swing = 0.5; p.cool = 0.6; p.done = false;
+  }
+
+  function landingPoint(yTarget) {
+    const d = ball.vy * ball.vy + 2 * g * (ball.y - yTarget);
+    if (d < 0) return null;
+    const t = (ball.vy + Math.sqrt(d)) / g;
+    return { x: ball.x + ball.vx * t, z: ball.z + ball.vz * t, t };
+  }
+
+  // ---------- update ----------
+  function physics(dt) {
+    const pz = ball.z, py = ball.y;
+    ball.vy -= g * dt;
+    ball.x += ball.vx * dt; ball.y += ball.vy * dt; ball.z += ball.vz * dt;
+    ball.spin += ball.vz * dt * 2;
+
+    if (['serve', 'rally'].includes(G.state) && (pz > 0) !== (ball.z > 0) && ball.lastHit !== null) {
+      const f = pz / (pz - ball.z), yc = py + (ball.y - py) * f;
+      if (yc < NET_H + 0.1) {
+        ball.vx *= 0.15; ball.vz *= 0.15; ball.z = pz > 0 ? 0.08 : -0.08;
+        endPoint(1 - ball.lastHit, 'ネット');
+        return;
+      }
+    }
+    if (ball.y <= 0.16 && ball.vy < 0) {
+      ball.y = 0.16;
+      if (['serve', 'rally'].includes(G.state)) {
+        const inb = Math.abs(ball.x) <= 4.5 && Math.abs(ball.z) <= 9;
+        if (ball.lastHit === null) endPoint(1 - G.server, 'サーブミス');
+        else if (!inb) endPoint(1 - ball.lastHit, 'アウト');
+        else endPoint(ball.z > 0 ? 1 : 0, '');
+      }
+      ball.vy = -ball.vy * 0.45; ball.vx *= 0.8; ball.vz *= 0.8;
+      if (Math.abs(ball.vy) < 1) ball.vy = 0;
+    }
+  }
+  function attachHeld() {
+    const s = pl[G.server];
+    ball.x = s.x; ball.z = s.z - s.side * 0.25; ball.y = 1.15;
+  }
+  const keyHeld = (i, a, b) => {
+    // i: player index; G.cpuMode lets either key set drive 1P
+    const sets = [{ l: ['a'], r: ['d'], u: ['w'], d: ['s'] }, { l: ['ArrowLeft'], r: ['ArrowRight'], u: ['ArrowUp'], d: ['ArrowDown'] }];
+    const use = G.cpuMode ? (i === 0 ? [0, 1] : []) : [i];
+    return use.some((k) => sets[k][a].some((n) => keys[n]));
+  };
+
+  function update(dt) {
+    tNow += dt;
+    if (G.state === 'menu') {
+      const s = pl[0];
+      ball.x = s.x; ball.z = s.z - 0.25; ball.y = 1.15 + Math.sin(tNow * 2) * 0.08;
+      return;
+    }
+    const spd = 2.6 + Math.min(G.score[0], 7) * 0.22;
+    pl.forEach((p) => {
+      p.swing = Math.max(0, p.swing - dt); p.cool = Math.max(0, p.cool - dt); p.reactT = Math.max(0, p.reactT - dt);
+      if (!p.cpu) {
+        const dz = (keyHeld(p.i, 'l') ? 1 : 0) - (keyHeld(p.i, 'r') ? 1 : 0);
+        const da = (keyHeld(p.i, 'd') ? 1 : 0) - (keyHeld(p.i, 'u') ? 1 : 0);
+        if (dz) { p.tz += dz * dt * 6 * G.sens; p.lastIn = tNow; }
+        if (da) p.aim = clamp(p.aim + da * dt * 1.6, -1, 1);
+        const s = ps[p.i];
+        if (s.seen) { p.tz += (s.tz - p.tz) * 0.55; p.aim += (s.aim - p.aim) * 0.3; p.lastIn = tNow; }
+        p.tz = clampZ(p, p.tz);
+      }
+    });
+
+    if (G.state === 'ready') {
+      G.timer -= dt;
+      pl.forEach((p) => { moveP(p, p.tz, 0, dt, p.cpu ? 4 : 14); });
+      attachHeld();
+      if (G.timer <= 0) beginServe();
+      return;
+    }
+    if (G.state === 'point') {
+      pl.forEach((p) => moveP(p, p.tz, 0, dt, p.cpu ? 4 : 14));
+      physics(dt);
+      G.timer -= dt;
+      if (G.timer <= 0) {
+        if (G.score[0] >= TARGET || G.score[1] >= TARGET) finishMatch();
+        else { G.server = G.winner; startServe(); }
+      }
+      return;
+    }
+    if (G.state === 'over') return;
+
+    // depth tracks the ball automatically, so only left/right movement is a skill
+    pl.forEach((p) => {
+      let xt = 0, zt = p.tz;
+      const incoming = !ball.held && ball.lastHit !== null && ball.lastHit !== p.i;
+      if (incoming || (!ball.held && ball.lastHit === null && p.i === G.server)) {
+        const l = landingPoint(0.5);
+        xt = clamp(l ? l.x : ball.x, -4.4, 4.4);
+        if (p.cpu && l) zt = clampZ(p, l.z);
+        // assist: while the player is not steering, drift toward the landing spot
+        if (!p.cpu && G.assist && l && l.z * p.side > 0 && tNow - p.lastIn > 0.3) {
+          const dzt = clampZ(p, l.z) - p.tz;
+          p.tz += Math.sign(dzt) * Math.min(Math.abs(dzt), 4.5 * dt);
+        }
+      } else if (p.cpu) zt = p.side * 6;
+      if (p.cpu) p.tz = zt;
+      if (!(p.cpu && p.reactT > 0)) moveP(p, p.tz, xt, dt, p.cpu ? spd : 14, 10);
+    });
+
+    if (ball.held) {
+      attachHeld();
+      const s = pl[G.server];
+      if (s.cpu) {
+        G.serveT -= dt;
+        if (G.serveT <= 0) { ball.held = false; ball.vy = 5.2; ball.vx = 0; ball.vz = 0; s.swing = 0.2; }
+      }
+      return;
+    }
+
+    pl.forEach((p) => {
+      if (p.cpu) {
+        if (G.state === 'serve' && p.i === G.server && ball.lastHit === null && ball.vy < 0 && ball.y < 2.3) hitCpu(p, true);
+        else if (!p.rolled && eligible(p) && ball.lastHit !== null && ball.y > 0.4 && ball.y < 2.8 &&
+                 Math.hypot(ball.x - p.x, ball.z - p.z) < 1.4) {
+          p.rolled = true;
+          const sp = Math.hypot(ball.vx, ball.vz);
+          const missP = Math.min(0.55, 0.1 + 0.02 * sp + 0.02 * G.score[1 - p.i]);
+          if (Math.random() >= missP) hitCpu(p, false);
+        }
+      } else if (p.swing > 0 && !p.done) {
+        const d = reach(p);
+        if (d !== null) hitHuman(p, d);
+      }
+    });
+
+    for (let i = 0; i < 2; i++) physics(dt / 2);
+    ball.trail.push({ x: ball.x, y: ball.y, z: ball.z });
+    if (ball.trail.length > 9) ball.trail.shift();
+  }
+  function moveP(p, tz, tx, dt, sp, spx) {
+    const dz = tz - p.z, mz = Math.min(Math.abs(dz), sp * dt);
+    p.z += Math.sign(dz) * mz;
+    const dx = tx - p.x, mx = Math.min(Math.abs(dx), (spx || sp) * dt);
+    p.x += Math.sign(dx) * mx;
+  }
+
+  // ---------- drawing ----------
+  function poly(pts, fill, stroke, lw) {
+    if (pts.some((p) => !p)) return;
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); }
+  }
+  function seg(a, b) { if (!a || !b) return; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+
+  function drawBackdrop() {
+    if (camOn && video.readyState >= 2 && video.videoWidth) {
+      const vw = video.videoWidth, vh = video.videoHeight, sc = Math.max(W / vw, H / vh);
+      const dw = vw * sc, dh = vh * sc;
+      ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1);
+      ctx.drawImage(video, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      ctx.restore();
+      ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(0, 0, W, H);
+      return;
+    }
+    if (bg) {
+      const ir = bg.width / bg.height, cr = W / H;
+      let sw, sh, sx, sy;
+      if (ir > cr) { sh = bg.height; sw = sh * cr; sx = (bg.width - sw) / 2; sy = 0; }
+      else { sw = bg.width; sh = sw / cr; sx = 0; sy = (bg.height - sh) / 2; }
+      ctx.drawImage(bg, sx, sy, sw, sh, 0, 0, W, H);
+      ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(0, 0, W, H);
+      return;
+    }
+    const hz = P(-40, 0, 0);
+    const hy = hz ? clamp(hz.y, 0, H) : CY * 0.8;
+    let gr = ctx.createLinearGradient(0, 0, 0, hy);
+    gr.addColorStop(0, '#121d23'); gr.addColorStop(1, '#2a3b44');
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, W, hy);
+    gr = ctx.createLinearGradient(0, hy, 0, H);
+    gr.addColorStop(0, '#4a3b2d'); gr.addColorStop(1, '#2b2119');
+    ctx.fillStyle = gr; ctx.fillRect(0, hy, W, H - hy);
+    ctx.strokeStyle = 'rgba(0,0,0,.28)'; ctx.lineWidth = 1;
+    for (let z = -40; z <= 40; z += 1.5) seg(P(-40, 0, z), P(14, 0, z));
+    ctx.strokeStyle = 'rgba(255,255,255,.05)';
+    for (let x = -40; x <= 14; x += 3) seg(P(x, 0, -40), P(x, 0, 40));
+    const glow = ctx.createRadialGradient(W * 0.8, 0, 0, W * 0.8, 0, W);
+    glow.addColorStop(0, 'rgba(255,214,150,.16)'); glow.addColorStop(1, 'rgba(255,214,150,0)');
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawCourt() {
+    const c = (x, z) => P(x, 0, z);
+    poly([c(-4.5, 9), c(4.5, 9), c(4.5, 0), c(-4.5, 0)], 'rgba(255,107,74,.14)');
+    poly([c(-4.5, 0), c(4.5, 0), c(4.5, -9), c(-4.5, -9)], 'rgba(106,168,255,.14)');
+    ctx.fillStyle = 'rgba(168,243,232,.5)';
+    for (let z = -8; z <= 8; z += 2) for (let x = -3; x <= 3; x += 1.5) {
+      const p = P(x, 0, z); if (!p) continue;
+      ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(1, 0.035 * p.s), 0, 7); ctx.fill();
+    }
+    ctx.save();
+    ctx.shadowColor = 'rgba(168,243,232,.8)'; ctx.shadowBlur = 8;
+    poly([c(-4.5, -9), c(4.5, -9), c(4.5, 9), c(-4.5, 9)], null, '#a8f3e8', 2);
+    ctx.strokeStyle = '#a8f3e8'; ctx.lineWidth = 2;
+    seg(c(-4.5, 0), c(4.5, 0)); seg(c(-4.5, 3), c(4.5, 3)); seg(c(-4.5, -3), c(4.5, -3));
+    ctx.restore();
+    const a = 0.55 + 0.45 * Math.sin(tNow * 3);
+    ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = 3;
+    [[4.5, 9, -1, -1], [4.5, -9, -1, 1]].forEach(([x, z, sx, sz]) => {
+      const o = c(x, z), px = c(x + sx * 0.9, z), pz = c(x, z + sz * 0.9);
+      if (!o || !px || !pz) return;
+      ctx.beginPath(); ctx.moveTo(px.x, px.y); ctx.lineTo(o.x, o.y); ctx.lineTo(pz.x, pz.y); ctx.stroke();
+    });
+  }
+
+  function ringGround(x, z, r, stroke, lw, dash) {
+    ctx.beginPath();
+    let first = true;
+    for (let i = 0; i <= 40; i++) {
+      const a = i / 40 * Math.PI * 2, p = P(x + Math.cos(a) * r, 0, z + Math.sin(a) * r);
+      if (!p) continue;
+      if (first) { ctx.moveTo(p.x, p.y); first = false; } else ctx.lineTo(p.x, p.y);
+    }
+    ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  function drawMarkers() {
+    // vertical reach ring around each human player's hitting zone
+    pl.forEach((p) => {
+      if (p.cpu) return;
+      const ready = reach(p) !== null;
+      ctx.beginPath();
+      for (let i = 0; i <= 48; i++) {
+        const a = i / 48 * Math.PI * 2, q = P(p.x, 1.5 + Math.sin(a) * 2.2, p.z + Math.cos(a) * 2.2);
+        if (!q) continue;
+        i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y);
+      }
+      ctx.setLineDash(ready ? [] : [6, 6]);
+      ctx.strokeStyle = ready ? 'rgba(255,176,46,.95)' : COL[p.i] + '99';
+      ctx.lineWidth = ready ? 3 : 1.5; ctx.stroke(); ctx.setLineDash([]);
+      // aim marker on the opposite half
+      if (['serve', 'rally', 'ready'].includes(G.state)) ringGround(p.aim * 3.4, -p.side * 6, 0.45, COL[p.i] + 'cc', 2);
+    });
+    const s = P(ball.x, 0, ball.z);
+    if (s) {
+      ctx.fillStyle = `rgba(0,0,0,${clamp(0.4 - ball.y * 0.06, 0.1, 0.4)})`;
+      ctx.beginPath(); ctx.ellipse(s.x, s.y, 0.4 * s.s, 0.09 * s.s, 0, 0, 7); ctx.fill();
+    }
+    if (!ball.held && ['serve', 'rally'].includes(G.state)) {
+      const l = landingPoint(0.16);
+      if (l && Math.abs(l.x) < 9 && Math.abs(l.z) < 14) {
+        const pulse = 0.8 + 0.2 * Math.sin(tNow * 8);
+        ringGround(l.x, l.z, 0.5 * pulse, 'rgba(255,176,46,.9)', 2.5);
+      }
+    }
+  }
+
+  function drawNet() {
+    const top = NET_H, bot = 1.43;
+    poly([P(-4.75, bot, 0), P(4.75, bot, 0), P(4.75, top, 0), P(-4.75, top, 0)], 'rgba(255,255,255,.2)');
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; seg(P(-4.75, top, 0), P(4.75, top, 0));
+    ctx.strokeStyle = '#d7e4e1'; ctx.lineWidth = 4;
+    seg(P(4.75, 0, 0), P(4.75, top, 0));
+    ctx.lineWidth = 2; seg(P(-4.75, 0, 0), P(-4.75, top, 0));
+  }
+
+  function drawFigure(p) {
+    const f = P(p.x, 0, p.z); if (!f) return;
+    const s = f.s, col = COL[p.i];
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.beginPath(); ctx.ellipse(f.x, f.y, 0.7 * s, 0.1 * s, 0, 0, 7); ctx.fill();
+    const K = 1.2, hip = P(p.x, 0.92 * K, p.z), sh = P(p.x, 1.45 * K, p.z), hd = P(p.x, 1.74 * K + 0.1, p.z);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1d2b33'; ctx.lineWidth = 0.46 * s; seg(f, hip);
+    ctx.strokeStyle = col; ctx.lineWidth = 0.7 * s; seg(hip, sh);
+    ctx.lineWidth = 0.2 * s;
+    const up = p.swing > 0;
+    [-0.2, 0.2].forEach((d) => {
+      const base = P(p.x + d, 1.38 * K, p.z);
+      const hand = up ? P(p.x + d, 2.45 * K, p.z - p.side * 0.3) : P(p.x + d, 0.95 * K, p.z - p.side * 0.5);
+      ctx.strokeStyle = col; seg(base, hand);
+    });
+    ctx.fillStyle = '#f1cfb4';
+    ctx.beginPath(); ctx.arc(hd.x, hd.y, 0.27 * s, 0, 7); ctx.fill();
+    ctx.fillStyle = '#1d2b33';
+    ctx.beginPath(); ctx.arc(hd.x, hd.y - 0.06 * s, 0.27 * s, Math.PI, 0); ctx.fill();
+    ctx.lineCap = 'butt';
+    ctx.font = '700 13px "Zen Kaku Gothic New", sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = col; ctx.fillText(p.name, hd.x, hd.y - 0.45 * s);
+  }
+
+  function drawBall() {
+    ball.trail.forEach((t, i) => {
+      const p = P(t.x, t.y, t.z); if (!p) return;
+      ctx.fillStyle = `rgba(255,176,46,${(i / ball.trail.length) * 0.35})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 0.26 * p.s * (i / ball.trail.length), 0, 7); ctx.fill();
+    });
+    const p = P(ball.x, ball.y, ball.z); if (!p) return;
+    const r = Math.max(6, 0.3 * p.s);
+    const gr = ctx.createRadialGradient(p.x - r * 0.35, p.y - r * 0.4, r * 0.1, p.x, p.y, r);
+    gr.addColorStop(0, '#fff3c4'); gr.addColorStop(0.45, '#ffb02e'); gr.addColorStop(1, '#d97a00');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill();
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(ball.spin);
+    ctx.strokeStyle = 'rgba(120,60,0,.55)'; ctx.lineWidth = Math.max(1, r * 0.09);
+    ctx.beginPath(); ctx.arc(0, -r * 0.2, r * 0.95, 0.3, 2.8); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, r * 0.2, r * 0.95, 3.5, 6.0); ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    drawBackdrop();
+    drawSkeleton();
+    drawCourt();
+    drawMarkers();
+    // far (small x) first
+    [
+      { d: pl[0].x, f: () => drawFigure(pl[0]) },
+      { d: pl[1].x, f: () => drawFigure(pl[1]) },
+      { d: -0.01, f: drawNet },
+      { d: ball.x, f: drawBall },
+    ].sort((a, b) => a.d - b.d).forEach((i) => i.f());
+  }
+
+  // ---------- camera + MediaPipe Pose Landmarker (up to two people) ----------
+  const VER = '0.10.14';
+  const MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+  const video = $('cam');
+  let camOn = false, stream = null, landmarker = null, lmList = [], lastVT = -1;
+  const ps = [0, 1].map(() => ({ seen: false, w0: 0, mx0: null, tz: 0, aim: 0, wr: [null, null] }));
+  const setChip = (t) => { $('chipTxt').textContent = t; };
+  let camAllowed = true;
+  try { if (document.featurePolicy && document.featurePolicy.allowsFeature && !document.featurePolicy.allowsFeature('camera')) camAllowed = false; } catch (e) {}
+  if (!camAllowed || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) document.querySelectorAll('[data-cam]').forEach((el) => { el.hidden = true; el.dataset.off = '1'; });
+
+  async function startCamera() {
+    if (camOn) return true;
+    setChip('カメラ起動中…');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      video.srcObject = stream; await video.play();
+    } catch (e) {
+      setChip('平面ロック');
+      toast('カメラを使えません', 'ブラウザのカメラ許可を確認してください（https か localhost で開く必要があります）', 3200);
+      return false;
+    }
+    camOn = true; $('camBtn').textContent = 'カメラ＋ポーズ操作 OFF'; $('recal').hidden = false;
+    setChip('モデル読み込み中…');
+    try {
+      if (!landmarker) {
+        const base = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VER}`;
+        const mod = await import(`${base}/vision_bundle.mjs`);
+        const files = await mod.FilesetResolver.forVisionTasks(`${base}/wasm`);
+        const opts = (d) => ({ baseOptions: { modelAssetPath: MODEL, delegate: d }, runningMode: 'VIDEO', numPoses: 2 });
+        try { landmarker = await mod.PoseLandmarker.createFromOptions(files, opts('GPU')); }
+        catch (e) { landmarker = await mod.PoseLandmarker.createFromOptions(files, opts('CPU')); }
+      }
+    } catch (e) {
+      stopCamera();
+      toast('ポーズ検出を読み込めません', 'ネットワーク接続を確認してください', 3000);
+      return false;
+    }
+    setChip('体を映してください');
+    return true;
+  }
+  function stopCamera() {
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null; video.srcObject = null;
+    camOn = false; lmList = []; lastVT = -1;
+    ps.forEach((s) => { s.seen = false; s.w0 = 0; s.wr = [null, null]; });
+    $('camBtn').textContent = 'カメラ＋ポーズ操作 ON'; $('recal').hidden = true;
+    setChip('平面ロック');
+  }
+
+  // left person (mirrored view) drives 1P, right person drives 2P; wrist swing triggers a hit
+  function poseStep(now) {
+    if (!camOn || !landmarker || video.readyState < 2 || video.currentTime === lastVT) return;
+    lastVT = video.currentTime;
+    let res;
+    try { res = landmarker.detectForVideo(video, now); } catch (e) { return; }
+    const list = (res && res.landmarks) || [];
+    lmList = [];
+    const used = [false, false];
+    list.forEach((p) => {
+      if ((p[11].visibility ?? 1) < 0.5 || (p[12].visibility ?? 1) < 0.5) return;
+      const sw = Math.hypot(p[11].x - p[12].x, p[11].y - p[12].y);
+      if (sw < 0.02) return;
+      const cx = (p[11].x + p[12].x) / 2, sy = (p[11].y + p[12].y) / 2, mx = 1 - cx;
+      const slot = G.cpuMode ? 0 : (mx < 0.5 ? 0 : 1);
+      if (used[slot]) return;
+      used[slot] = true; lmList.push(p);
+      const s = ps[slot];
+      if (!s.seen) { s.seen = true; s.w0 = 0; s.mx0 = null; s.wr = [null, null]; }
+      if (!s.w0) s.w0 = sw;
+      if (s.mx0 === null) s.mx0 = mx;
+      // relative movement from where the person first stood: a small step covers a lot of court
+      s.tz = clampZ(pl[slot], (slot === 0 ? 5 : -5) - (mx - s.mx0) * 20 * G.sens);
+      s.aim = clamp((sw / s.w0 - 1) * 4, -1, 1);
+      [15, 16].forEach((i) => {
+        const w = p[i], prev = s.wr[i - 15];
+        if ((w.visibility ?? 1) < 0.4) { s.wr[i - 15] = null; return; }
+        if (prev) {
+          const dt = (now - prev.t) / 1000;
+          if (dt > 0 && dt < 0.3) {
+            const v = (prev.y - w.y) / dt / sw;
+            if (v > 4.5 && w.y < sy + 0.3 * sw) doSwing(pl[slot]);
+          }
+        }
+        s.wr[i - 15] = { y: w.y, t: now };
+      });
+    });
+    ps.forEach((s, i) => { if (!used[i]) s.seen = false; });
+    const n = used.filter(Boolean).length;
+    setChip(n ? `ポーズ検出中 ${n}人` : '体を映してください');
+  }
+
+  function drawSkeleton() {
+    if (!camOn || !lmList.length || !video.videoWidth) return;
+    const vw = video.videoWidth, vh = video.videoHeight, sc = Math.max(W / vw, H / vh);
+    const dw = vw * sc, dh = vh * sc, ox = (W - dw) / 2, oy = (H - dh) / 2;
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(168,243,232,.85)'; ctx.lineWidth = 3;
+    lmList.forEach((lm) => {
+      const pt = (i) => ({ x: W - (ox + lm[i].x * dw), y: oy + lm[i].y * dh });
+      [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24]].forEach(([a, b]) => {
+        const A = pt(a), B = pt(b);
+        ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+      });
+      [0, 11, 12, 13, 14, 23, 24].forEach((i) => { const q = pt(i); ctx.fillStyle = '#e9f5f3'; ctx.beginPath(); ctx.arc(q.x, q.y, 4, 0, 7); ctx.fill(); });
+      [15, 16].forEach((i) => { const q = pt(i); ctx.fillStyle = '#ffb02e'; ctx.beginPath(); ctx.arc(q.x, q.y, 8, 0, 7); ctx.fill(); });
+    });
+    ctx.restore();
+  }
+
+  // ---------- input ----------
+  const drags = new Map();
+  cv.addEventListener('pointerdown', (e) => {
+    if (G.state === 'menu' || G.state === 'over') return;
+    const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const slot = G.cpuMode || x < W / 2 ? 0 : 1;
+    const p = pl[slot];
+    if (p.cpu) return;
+    drags.set(e.pointerId, { slot, x, y, t: performance.now(), moved: false, g0: ground(x, y), tz0: p.tz, aim0: p.aim });
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  cv.addEventListener('pointermove', (e) => {
+    const d = drags.get(e.pointerId); if (!d) return;
+    const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    if (!d.moved && Math.hypot(x - d.x, y - d.y) > 8) d.moved = true;
+    if (!d.moved) return;
+    const p = pl[d.slot], g1 = ground(x, y);
+    if (g1 && d.g0) p.tz = clampZ(p, d.tz0 + (g1.z - d.g0.z) * G.sens);
+    p.lastIn = tNow;
+    p.aim = clamp(d.aim0 + (y - d.y) / 110, -1, 1);
+  });
+  const endDrag = (e) => {
+    const d = drags.get(e.pointerId); if (!d) return;
+    if (!d.moved && performance.now() - d.t < 350) doSwing(pl[d.slot]);
+    drags.delete(e.pointerId);
+  };
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', (e) => drags.delete(e.pointerId));
+  $('hit1').addEventListener('pointerdown', (e) => { e.preventDefault(); doSwing(pl[0]); });
+  $('hit2').addEventListener('pointerdown', (e) => { e.preventDefault(); doSwing(pl[1]); });
+
+  window.addEventListener('keydown', (e) => {
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const playing = G.state !== 'menu' && G.state !== 'over';
+    const p1Swing = k === ' ' || k === 'f', p2Swing = k === 'Enter' || k === 'l';
+    if (playing && (p1Swing || p2Swing)) {
+      e.preventDefault();
+      if (G.cpuMode) doSwing(pl[0]); else doSwing(p1Swing ? pl[0] : pl[1]);
+      return;
+    }
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'd', 'w', 's'].includes(k)) { keys[k] = true; if (playing) e.preventDefault(); }
+  });
+  window.addEventListener('keyup', (e) => { keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false; });
+
+  $('start2').addEventListener('click', () => { $('introHow').hidden = false; startMatch(false); });
+  $('start1').addEventListener('click', () => { $('introHow').hidden = false; startMatch(true); });
+  $('camBtn').addEventListener('click', () => { unlockAudio(); if (camOn) stopCamera(); else startCamera(); });
+  $('sens').addEventListener('input', (e) => { G.sens = +e.target.value; });
+  $('assistBtn').addEventListener('click', () => { G.assist = !G.assist; $('assistBtn').textContent = '移動アシスト ' + (G.assist ? 'ON' : 'OFF'); });
+  $('recal').addEventListener('click', () => { ps.forEach((s) => { s.w0 = 0; s.mx0 = null; }); toast('立ち位置をリセット', '今の距離を基準にしました', 1200); });
+  $('photoBtn').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('photo').click(); } });
+  $('photo').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const url = URL.createObjectURL(f), img = new Image();
+    img.onload = () => { bg = img; $('resetBg').hidden = false; toast('背景を設定しました', 'コートがお部屋に重なります', 1400); };
+    img.src = url;
+    e.target.value = '';
+  });
+  $('resetBg').addEventListener('click', () => { bg = null; $('resetBg').hidden = true; });
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function frame(t) {
+    const dt = Math.min(0.033, (t - last) / 1000); last = t;
+    poseStep(t);
+    update(dt); draw();
+    requestAnimationFrame(frame);
+  }
+  resize(); hud();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body></html>

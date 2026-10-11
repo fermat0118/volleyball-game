@@ -91,6 +91,10 @@ body { background: var(--ink); color: var(--hud); font-family: var(--font-body);
 .btns { display: flex; flex-wrap: wrap; gap: 10px; }
 .go { border: 0; border-radius: 12px; background: var(--line); color: #06201c; font: 900 20px/1 var(--font-display); letter-spacing: .08em; padding: 14px 24px; cursor: pointer; }
 .go.alt { background: transparent; color: var(--hud); border: 1px solid rgba(168,243,232,.45); }
+.setup { position: absolute; left: 50%; bottom: calc(118px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: grid; justify-items: center; gap: 8px; text-align: center; pointer-events: none; max-width: calc(100% - 32px); }
+.setup[hidden] { display: none !important; }
+.setup p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--hud); background: var(--glass); padding: 6px 12px; border-radius: 10px; }
+.setup .go { pointer-events: auto; font-size: 26px; padding: 16px 40px; box-shadow: 0 6px 28px rgba(168,243,232,.35); }
 @media (prefers-reduced-motion: reduce) { .chip i { animation: none; } #toast { transition: none; } }
 </style>
 </head><body>
@@ -122,6 +126,11 @@ body { background: var(--ink); color: var(--hud); font-family: var(--font-body);
       <button class="ghost" id="resetBg" type="button" hidden>背景を戻す</button>
     </div>
     <button class="hit" id="hit2" type="button" aria-label="2Pヒット">ヒット<small>2P</small></button>
+  </div>
+
+  <div class="setup" id="setup" hidden>
+    <p id="setupMsg">7点先取。立ち位置とポーズを決めたら、スタートを押してください</p>
+    <button class="go" id="startBtn" type="button">スタート</button>
   </div>
 
   <div id="intro">
@@ -224,7 +233,8 @@ body { background: var(--ink); color: var(--hud); font-family: var(--font-body);
   }
   function hud() {
     $('sL').textContent = G.score[0]; $('sR').textContent = G.score[1];
-    $('nm0').textContent = pl[0].name; $('nm1').textContent = pl[1].name;
+    const mpLabel = (p) => p.name + (G.score[p.i] === TARGET - 1 ? ' マッチポイント' : '');
+    $('nm0').textContent = mpLabel(pl[0]); $('nm1').textContent = mpLabel(pl[1]);
     $('rally').textContent = G.rally; $('best').textContent = '最高 ' + G.best;
   }
 
@@ -237,11 +247,24 @@ body { background: var(--ink); color: var(--hud); font-family: var(--font-body);
     G.score = [0, 0]; G.server = 0;
     $('intro').hidden = true;
     startServe();
+    // wait on the start button so players can set position / pose first
+    G.state = 'setup';
+    $('setup').hidden = false;
+    $('startBtn').focus();
   }
-  function startServe() {
+  function beginMatch() {
+    if (G.state !== 'setup') return;
+    unlockAudio();
+    $('setup').hidden = true;
+    startServe(true);
+    G.timer = 1.8;
+    toast(TARGET + '点先取', '先に' + TARGET + '点取った方の勝ち', 1700);
+  }
+  function startServe(keepPos) {
     G.state = 'ready'; G.timer = 0.9; G.rally = 0;
     ball.held = true; ball.vx = ball.vy = ball.vz = 0; ball.lastHit = null; ball.trail.length = 0;
     pl.forEach((p) => { p.rolled = false; p.swing = 0; p.done = true; });
+    if (keepPos) { hud(); return; }
     const s = pl[G.server], o = pl[1 - G.server];
     s.tz = s.side * 8; o.tz = o.side * 5;
     if (!s.cpu) s.z = s.tz;
@@ -251,8 +274,15 @@ body { background: var(--ink); color: var(--hud); font-family: var(--font-body);
   function beginServe() {
     G.state = 'serve';
     const s = pl[G.server];
-    if (s.cpu) { G.serveT = 1.1; toast('CPUのサーブ', '', 1000); }
+    const mp = matchPointNames();
+    if (s.cpu) { G.serveT = 1.1; toast(mp ? 'マッチポイント！' : 'CPUのサーブ', mp ? mp + ' / CPUのサーブ' : '', mp ? 1400 : 1000); }
+    else if (mp) toast('マッチポイント！', mp + ' / ' + s.name + 'のサーブ', 1900);
     else toast(s.name + 'のサーブ', 'ヒットでトス → 落ちてくるところでもう一度', 1900);
+  }
+  // players one point from winning, e.g. "1Pのマッチポイント"
+  function matchPointNames() {
+    const who = pl.filter((p) => G.score[p.i] === TARGET - 1).map((p) => p.name);
+    return who.length ? who.join('・') + 'のマッチポイント' : '';
   }
   function endPoint(w, msg) {
     if (G.state === 'point' || G.state === 'over') return;
@@ -262,7 +292,7 @@ body { background: var(--ink); color: var(--hud); font-family: var(--font-body);
       G.best = G.rally;
       try { localStorage.setItem('arvb-side-best', String(G.best)); } catch (e) {}
     }
-    toast(pl[w].name + 'のポイント！', msg, 1500);
+    toast(pl[w].name + 'のポイント！', G.score[w] === TARGET - 1 ? 'マッチポイント！' : msg, 1500);
     beep(520, 0.25, 'triangle', 0.1);
     hud();
   }
@@ -337,7 +367,7 @@ body { background: var(--ink); color: var(--hud); font-family: var(--font-body);
   }
 
   function doSwing(p) {
-    if (!p || p.cpu || G.state === 'menu' || G.state === 'over') return;
+    if (!p || p.cpu || G.state === 'menu' || G.state === 'over' || G.state === 'setup') return;
     if (G.state === 'serve' && G.server === p.i && ball.held) {
       ball.held = false; ball.vx = 0; ball.vz = 0; ball.vy = 5.2; p.swing = 0.25; p.cool = 0.3;
       beep(700, 0.06, 'sine', 0.05);
@@ -413,6 +443,11 @@ body { background: var(--ink); color: var(--hud); font-family: var(--font-body);
       }
     });
 
+    if (G.state === 'setup') {
+      pl.forEach((p) => { moveP(p, p.tz, 0, dt, p.cpu ? 4 : 14); });
+      attachHeld();
+      return;
+    }
     if (G.state === 'ready') {
       G.timer -= dt;
       pl.forEach((p) => { moveP(p, p.tz, 0, dt, p.cpu ? 4 : 14); });
@@ -823,6 +858,7 @@ body { background: var(--ink); color: var(--hud); font-family: var(--font-body);
 
   $('start2').addEventListener('click', () => { $('introHow').hidden = false; startMatch(false); });
   $('start1').addEventListener('click', () => { $('introHow').hidden = false; startMatch(true); });
+  $('startBtn').addEventListener('click', beginMatch);
   $('camBtn').addEventListener('click', () => { unlockAudio(); if (camOn) stopCamera(); else startCamera(); });
   $('sens').addEventListener('input', (e) => { G.sens = +e.target.value; });
   $('assistBtn').addEventListener('click', () => { G.assist = !G.assist; $('assistBtn').textContent = '移動アシスト ' + (G.assist ? 'ON' : 'OFF'); });
